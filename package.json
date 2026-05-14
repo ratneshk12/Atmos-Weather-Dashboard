@@ -1,0 +1,16 @@
+{
+  "name": "atmos-weather-dashboard",
+  "version": "2.0.0",
+  "description": "React weather dashboard with a small Node backend proxy.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "weather",
+    "react",
+    "dashboard"
+  ],
+  "license": "MIT"
+}
