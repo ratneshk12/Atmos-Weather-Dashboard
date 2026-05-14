@@ -113,7 +113,6 @@ const apiKey = "YOUR_API_KEY";
 https://atmos-weather-dashboard-ten.vercel.app/
 
 
-
 # 🎯 Future Improvements
 
 * 5-day weather forecast
