@@ -1,5 +1,13 @@
 const { useEffect, useMemo, useState } = React;
 
+async function parseApiResponse(response) {
+  const text = await response.text();
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error("Server returned an invalid response. Please restart the app and try again.");
+  }
+}
 const starterForecast = {
   city: "New Delhi",
   country: "IN",
@@ -70,7 +78,7 @@ function App() {
     if (!silent) setError("");
     try {
       const response = await fetch(`/api/weather?city=${encodeURIComponent(cleanCity)}`);
-      const data = await response.json();
+      const data = await parseApiResponse(response);
       if (!response.ok) throw new Error(data.error || "Weather service failed.");
       setWeather(data);
       setCity(data.city);
@@ -86,7 +94,7 @@ function App() {
     if (!silent) setError("");
     try {
       const response = await fetch(`/api/weather?lat=${latitude}&lon=${longitude}`);
-      const data = await response.json();
+      const data = await parseApiResponse(response);
       if (!response.ok) throw new Error(data.error || "Unable to load your location weather.");
       setWeather(data);
       setCity(data.city);
