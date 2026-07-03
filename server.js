@@ -14,21 +14,23 @@ const mimeTypes = {
   ".json": "application/json; charset=utf-8"
 };
 
-const server = http.createServer(async (req, res) => {
-  try {
-    const requestUrl = new URL(req.url, `http://${req.headers.host}`);
+function createServer() {
+  return http.createServer(async (req, res) => {
+    try {
+      const requestUrl = new URL(req.url, `http://${req.headers.host}`);
 
-    if (requestUrl.pathname === "/api/weather") {
-      const payload = await getWeather(requestUrl.searchParams);
-      sendJson(res, 200, payload);
-      return;
+      if (requestUrl.pathname === "/api/weather") {
+        const payload = await getWeather(requestUrl.searchParams);
+        sendJson(res, 200, payload);
+        return;
+      }
+
+      serveStatic(req, res, requestUrl.pathname);
+    } catch (error) {
+      sendJson(res, error.status || 500, { error: error.message || "Server error" });
     }
-
-    serveStatic(req, res, requestUrl.pathname);
-  } catch (error) {
-    sendJson(res, error.status || 500, { error: error.message || "Server error" });
-  }
-});
+  });
+}
 
 async function getWeather(params) {
   const city = params.get("city");
@@ -59,20 +61,23 @@ async function getWeather(params) {
     throw Object.assign(new Error("City or coordinates are required."), { status: 400 });
   }
 
+  const currentUrl = `https://api.openweathermap.org/data/2.5/weather?lat=${coordinates.lat}&lon=${coordinates.lon}&units=metric&appid=${API_KEY}`;
   const forecastUrl = `https://api.openweathermap.org/data/2.5/forecast?lat=${coordinates.lat}&lon=${coordinates.lon}&units=metric&appid=${API_KEY}`;
   const airUrl = `https://api.openweathermap.org/data/2.5/air_pollution?lat=${coordinates.lat}&lon=${coordinates.lon}&appid=${API_KEY}`;
-  const forecastData = await fetchJson(forecastUrl);
-  const airData = await fetchJson(airUrl);
+  const [currentData, forecastData, airData] = await Promise.all([
+    fetchJson(currentUrl),
+    fetchJson(forecastUrl),
+    fetchJson(airUrl)
+  ]);
   if (!forecastData.list?.length) throw Object.assign(new Error("Forecast data is unavailable."), { status: 502 });
 
   const daily = uniqueDailyForecast(forecastData.list).slice(0, 5);
-  const current = forecastData.list[0];
   const air = airData.list?.[0];
 
   return {
-    city: coordinates.city,
-    country: coordinates.country,
-    current: mapForecast(current, "Today", true),
+    city: currentData.name || coordinates.city,
+    country: currentData.sys?.country || coordinates.country,
+    current: mapCurrentWeather(currentData),
     airQuality: mapAirQuality(air),
     forecast: daily.map(item => mapForecast(item, formatDay(item.dt_txt), false))
   };
@@ -80,7 +85,15 @@ async function getWeather(params) {
 
 async function fetchJson(url) {
   const response = await fetch(url);
-  const data = await response.json();
+  const text = await response.text();
+  let data;
+
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw Object.assign(new Error("Weather service returned an invalid response. Please try again."), { status: 502 });
+  }
+
   if (!response.ok) {
     throw Object.assign(new Error(data.message || "Weather API request failed."), { status: response.status });
   }
@@ -95,6 +108,18 @@ function uniqueDailyForecast(items) {
     seen.add(day);
     return true;
   });
+}
+
+function mapCurrentWeather(item) {
+  return {
+    date: "Live now",
+    temp: Math.round(item.main.temp * 10) / 10,
+    feelsLike: Math.round(item.main.feels_like * 10) / 10,
+    wind: item.wind.speed,
+    humidity: item.main.humidity,
+    description: item.weather[0].description,
+    icon: item.weather[0].icon
+  };
 }
 
 function mapForecast(item, date, includeFeelsLike) {
@@ -168,11 +193,14 @@ function sendJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
-function startServer(port) {
+function startServer(port = PORT) {
+  const server = createServer();
+
   server.once("error", error => {
     if (error.code === "EADDRINUSE") {
-      console.log(`Port ${port} is busy. Trying ${Number(port) + 1}...`);
-      startServer(Number(port) + 1);
+      const nextPort = Number(port) + 1;
+      console.log(`Port ${port} is busy. Trying ${nextPort}...`);
+      startServer(nextPort);
       return;
     }
 
